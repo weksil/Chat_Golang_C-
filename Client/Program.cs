@@ -14,6 +14,7 @@ namespace testTCP
         {
             Console.Write("Введите ip: ");
             var host = Console.ReadLine();
+            if(host.Length == 0) host = Host;
             Console.Write("Введите имя: ");
             var name = Console.ReadLine();
             Console.Write("Введите id: ");
@@ -45,11 +46,8 @@ namespace testTCP
                         data = Pakage.Make(mess);
                         stream.WriteAsync(data,0,data.Length);
                     } while (true);
-                    Console.WriteLine("can disconect");
-                    listening.Abort();
-                    client.Close();
-                    Console.WriteLine("status: " + client.Connected );
                 }
+                Console.WriteLine("Disconect");
             }
             catch (System.Exception e)
             {
@@ -64,12 +62,12 @@ namespace testTCP
             int numberBytes;
             Message msg = new Message();
             msg.Author = new Client();
-            while (client.Connected && stream.CanRead)
+            while (stream.DataAvailable)
             {
                 numberBytes = stream.Read(data,0,data.Length);
-                if(numberBytes == 0) continue;
+                if(numberBytes == 0 ) continue;
                 Pakage.Parse(msg,data);
-                Console.WriteLine(msg.ToString());
+                Console.WriteLine(msg.ToString() + "\n");
             }
         }
         
@@ -97,7 +95,6 @@ namespace testTCP
         public static byte[] Make(Message msg)
         {
             byte[] idAuthor = BitConverter.GetBytes(msg.Author.Id);
-            // Reverse(idAuthor);
             byte[] nameAuthor = Encoding.UTF8.GetBytes(msg.Author.Name);
             byte[] body = Encoding.UTF8.GetBytes(msg.Body);
             byte[] res = new byte[end.Length +separate.Length + idAuthor.Length + nameAuthor.Length + body.Length];
