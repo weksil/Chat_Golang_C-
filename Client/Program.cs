@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace testTCP
 {
@@ -21,6 +22,8 @@ namespace testTCP
             var id = UInt32.Parse(Console.ReadLine());
             var messClient = new Client(){Id = id, Name = name};
             var mess = new Message(){Author = messClient, Body = ""};
+            var cts = new CancellationTokenSource();
+
             try
             {    
                 using(TcpClient client = new TcpClient())
@@ -36,8 +39,8 @@ namespace testTCP
                     NetworkStream stream = client.GetStream();
                     data = Pakage.Make(mess);
                     stream.WriteAsync(data,0,data.Length);
-                    Thread listening = new Thread(new ParameterizedThreadStart(ListenServer));
-                    listening.Start(client);
+                    Task listening = new Task(() => ListenServer(client,cts.Token));
+                    listening.Start();
                     do
                     {
                         mess.Body = Console.ReadLine();
@@ -46,26 +49,28 @@ namespace testTCP
                         data = Pakage.Make(mess);
                         stream.WriteAsync(data,0,data.Length);
                     } while (true);
+                    cts.Cancel();
                 }
                 Console.WriteLine("Disconect");
+                
             }
             catch (System.Exception e)
             {
                     Console.Write("Error: " + e.Message);                   
             }
         }
-        public static void ListenServer(Object source)
+        public static void ListenServer(TcpClient client,CancellationToken cancelToken)
         {
-            TcpClient client = source as TcpClient;
+            // TcpClient client = source as TcpClient;
             byte[] data = new byte[1024];
             var stream = client.GetStream();
             int numberBytes;
             Message msg = new Message();
             msg.Author = new Client();
-            while (stream.DataAvailable)
+            while (!cancelToken.IsCancellationRequested)
             {
                 numberBytes = stream.Read(data,0,data.Length);
-                if(numberBytes == 0 ) continue;
+                if(numberBytes == 0) continue;
                 Pakage.Parse(msg,data);
                 Console.WriteLine(msg.ToString() + "\n");
             }
