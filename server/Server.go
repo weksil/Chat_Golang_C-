@@ -51,10 +51,10 @@ func decodeJSON(c net.Conn, messChanell chan<- Message,clients map[uint32]Client
 	for {
 		data, err := dec.ReadBytes(endMess)
 		if err != nil {
+			delete(clients,curClient)
 			fmt.Println("read" + err.Error())
 			return
 		}
-		fmt.Println("------------------------------\nCurClient: ",curClient)
 		
 		msg.Author.ID = binary.BigEndian.Uint32(data[0:4])
 		index = 4
@@ -85,7 +85,6 @@ func writeToClient(messChanell <-chan Message,clients map[uint32]Client) {
 	for {
 		select {
 		case mess := <-messChanell:
-			fmt.Println("check")
 			data := make([]byte, 4	, 512)
 			binary.BigEndian.PutUint32(data[0:4], mess.Author.ID)
 			data = append(data, []byte(mess.Author.Name)...)
@@ -96,7 +95,11 @@ func writeToClient(messChanell <-chan Message,clients map[uint32]Client) {
 				if mess.Author.ID == k {
 					continue
 				}
-				clients[k].Conn.Write(data)
+				_, err := clients[k].Conn.Write(data)
+				if err != nil {
+					fmt.Println("read" + err.Error())
+					return
+				}
 			}
 		}
 	}
