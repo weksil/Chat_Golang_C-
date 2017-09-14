@@ -10,7 +10,7 @@ import (
 // Message ...
 type Message struct {
 	Author Client
-	Body   string
+	Body   []byte
 }
 
 // Client ...
@@ -19,14 +19,22 @@ type Client struct {
 	Name string
 	Conn net.Conn
 }
+func SendToClient (client Client, mess []byte){
+	_, err := client.Conn.Write(mess)
+	if err != nil {
+		fmt.Println("send" + err.Error())
+		return
+	}
+}
+var clients map[uint32]Client
+var messages chan Message
 
 // RunServer ...
 func RunServer() {
-	messages := make(chan Message)
-	var clients map[uint32]Client = make(map[uint32]Client) 
+	messages = make(chan Message)
+	clients = make(map[uint32]Client) 
 	listener, _ := net.Listen("tcp", ":5555")
 	fmt.Println("Run server")
-	go writeToClient(messages,clients)	
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -35,75 +43,69 @@ func RunServer() {
 		}
 		fmt.Println("Connected")
 		fmt.Print("\n")
-		go decodeJSON(conn, messages,clients)
+		go listenClient(conn)
 	}
 }
 
-const endMess byte = 254
-const separateMess byte = 253
+const endMess byte = 255
+const commMess byte = 200
+const commGetID byte = 201
+const commDisconnect byte = 202
 
-func decodeJSON(c net.Conn, messChanell chan<- Message,clients map[uint32]Client) {
+func listenClient(c net.Conn){
 	defer c.Close()
 	dec := bufio.NewReader(c)
+	var client Client
 	var msg Message
-	var curClient uint32 = 0
-	var index int
-	for {
+	for{
 		data, err := dec.ReadBytes(endMess)
-		if err != nil {
-			delete(clients,curClient)
-			fmt.Println("read" + err.Error())
-			return
-		}
-		
-		msg.Author.ID = binary.BigEndian.Uint32(data[0:4])
-		index = 4
-		for data[index] != separateMess {
-			index++
-		}
-		msg.Author.Name = string(data[4:index])
-		if curClient == 0 {
-			curClient = msg.Author.ID
-			var client Client
-			client.Conn = c
-			client.ID = curClient
-			client.Name = msg.Author.Name
-			clients[client.ID] = client
-			continue
-		}
-		index++
-		startBody := index
-		for data[index] != endMess {
-			index++
-		}
-		msg.Body = string(data[startBody:index])
-		fmt.Printf("ID: %v, Name: %v\nBody : %v\nLen: %v\n", msg.Author.ID, msg.Author.Name, msg.Body, index)
-		messChanell <- msg
-	}
-}
-func writeToClient(messChanell <-chan Message,clients map[uint32]Client) {
-	for {
-		select {
-		case mess := <-messChanell:
-			data := make([]byte, 4	, 512)
-			binary.BigEndian.PutUint32(data[0:4], mess.Author.ID)
-			data = append(data, []byte(mess.Author.Name)...)
-			data = append(data, separateMess)
-			data = append(data, []byte(mess.Body)...)
-			data = append(data, endMess)
-			for k:= range clients{
-				if mess.Author.ID == k {
-					continue
-				}
-				_, err := clients[k].Conn.Write(data)
-				if err != nil {
-					fmt.Println("read" + err.Error())
-					return
-				}
+		if err != nil{
+			fmt.Println("error read, disconnect")
+			delete(clients,client.ID)
+			break
+		}  
+		switch data[0] {
+			case commMess:
+				msg.Body = data
+				SendMessages(msg)
+			case commDisconnect:
+				delete(clients,client.ID)
+				return
+			case commGetID:
+				client = createClient(c,data)
+				idData := make([]byte,6) 
+				binary.BigEndian.PutUint32(idData[1:5], client.ID)
+				idData[0] = commGetID
+				idData[5] = endMess
+				SendToClient(client,idData)
+				msg.Author = client
+			default:
+				fmt.Println("err command")
 			}
 		}
 	}
+
+func SendMessages(mess Message) {
+	for k:= range clients{
+		if mess.Author.ID == k {
+			continue
+		}
+		SendToClient(clients[k],mess.Body)
+	}
 }
+
+var numID uint32 = 0
+
+func createClient(connect net.Conn, data []byte) Client {
+	var res Client
+	numID ++ 
+	res.Conn = connect
+	res.ID = numID
+	res.Name = string(data[1:])
+	clients[numID] = res
+	return res
+}
+
 func main() {
 	go RunServer()
 	for{}
