@@ -51,6 +51,7 @@ namespace testTCP
                     do
                     {
                         mess.Body = Console.ReadLine();
+                        Console.WriteLine("------------------");
                         if(mess.Body.Length == 0 || mess.Body == "qq")
                             break;
                         data = Pakage.Make(mess);
@@ -84,6 +85,7 @@ namespace testTCP
                     case Pakage.commMess:
                         Pakage.Parse(msg,data);
                         Console.WriteLine(msg.ToString() + "\n");
+                        Console.WriteLine("------------------");
                         break;
                     case Pakage.commGetID:
                         Pakage.Parse(msg,data);

@@ -51,6 +51,7 @@ const endMess byte = 255
 const commMess byte = 200
 const commGetID byte = 201
 const commDisconnect byte = 202
+const commGetKey byte = 202
 
 func listenClient(c net.Conn){
 	defer c.Close()
@@ -74,9 +75,11 @@ func listenClient(c net.Conn){
 			case commGetID:
 				client = createClient(c,data)
 				idData := make([]byte,6) 
+
 				binary.BigEndian.PutUint32(idData[1:5], client.ID)
 				idData[0] = commGetID
 				idData[5] = endMess
+				fmt.Println("Send id")
 				SendToClient(client,idData)
 				msg.Author = client
 			default:
