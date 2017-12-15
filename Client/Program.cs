@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Numerics;
 
 namespace testTCP
 {
@@ -12,7 +13,14 @@ namespace testTCP
         private const string Host = "127.0.0.1";
         private const int port = 5555;
         private static bool isGettingID;
+        private static bool isGettingKey;
         static void Main(string[] args)
+        {
+            // var t = (Pakage.Pow(49,8))%110;
+            // Console.WriteLine(t);
+            Work();
+        }
+        public static void Work()
         {
             Console.Write("Введите ip: ");
             var host = Console.ReadLine();
@@ -20,6 +28,7 @@ namespace testTCP
             Console.Write("Введите имя: ");
             var name = Console.ReadLine();
             var messClient = new Client(){Name = name};
+            messClient.Init();
             messClient.CalculateData();
             var mess = new Message(){Author = messClient, Body = ""};
             var cts = new CancellationTokenSource();
@@ -41,12 +50,22 @@ namespace testTCP
                     Task listening = new Task(() => ListenServer(client,cts.Token,messClient));
                     listening.Start();
 
-                    data = Pakage.GetID(messClient);
-                    stream.WriteAsync(data,0,data.Length);
-                    
-                    Console.WriteLine("Getting id...");
-                    while (!isGettingID){}
-                    Console.WriteLine("id: " + messClient.Id + "\n");
+                    #region Id
+                        data = Pakage.GetID(messClient);
+                        stream.WriteAsync(data,0,data.Length);
+                        
+                        Console.WriteLine("Getting id...");
+                        while (!isGettingID){}
+                        Console.WriteLine("id: " + messClient.Id + "\n");
+                    #endregion
+                    #region key
+                        data = Pakage.MakeKey(messClient.G,messClient.P,messClient.A);
+                        stream.WriteAsync(data,0,data.Length);
+                        
+                        Console.Write("Getting key...");
+                        while (!isGettingKey){}
+                        Console.Write(" Finish\n");
+                    #endregion
 
                     do
                     {
@@ -66,7 +85,8 @@ namespace testTCP
             }
             catch (System.Exception e)
             {
-                    Console.Write("Error: " + e.Message);                   
+                    Console.WriteLine("Error: " + e.Message);                   
+                    Console.WriteLine("Tree: " + e.StackTrace);                   
             }
         }
         public static void ListenServer(TcpClient client,CancellationToken cancelToken,Client msgClient)
@@ -83,15 +103,26 @@ namespace testTCP
                 switch (data[0])
                 {
                     case Pakage.commMess:
-                        Pakage.Parse(msg,data);
+                        Console.Write("[ ");                    
+                        for (int i = 0; i < 60; i++)
+                        {
+                            Console.Write(data[i] + " ");
+                        }
+                        Console.Write("]\n");                    
+                        Pakage.Parse(msgClient,msg,data);
                         Console.WriteLine(msg.ToString() + "\n");
                         Console.WriteLine("------------------");
                         break;
                     case Pakage.commGetID:
-                        Pakage.Parse(msg,data);
-                        msgClient.Id = msg.Author.Id;
+                        // Pakage.Parse(msgClient,msg,data,false);
+                        msgClient.Id = BitConverter.ToUInt32(data,1);;
                         msgClient.CalculateData();                       
                         isGettingID = true;
+
+                        break;
+                    case Pakage.commGetKey:
+                        Pakage.Parse(msgClient,data);                     
+                        isGettingKey = true;
 
                         break;
                     default:
@@ -108,12 +139,44 @@ namespace testTCP
         public string Name; 
         public byte[] NameBytes;
         public byte[] IdBytes;
+        public UInt64 G;
+        public UInt64 P;
+        public UInt64 A;
+        public UInt64 firstKey;
+        private UInt64 SecretKey;
+        public void Init()
+        {
+            Random r = new Random();
+            G = (UInt64)r.Next(200,500);
+            P = (UInt64)r.Next(10000,20000);
+
+            firstKey = (UInt64)r.Next(50,100);
+            A = UInt64.Parse( BigInteger.ModPow(G,firstKey,P).ToString());
+            
+        }
+        public void SetKey(UInt64 key)
+        {
+            SecretKey = key;
+        }
         public void CalculateData()
         {
             NameBytes = Encoding.UTF8.GetBytes(Name);
             IdBytes = BitConverter.GetBytes(Id);
         }
+        public void Decode(byte[] mess)
+        {
+            int i = 1;
+            while(mess[i - 1] != 255 && mess[i] != 0 )
+            {
 
+                mess[i] = (byte)(mess[i] ^ SecretKey);
+                i++;
+                if(mess.Length == i)
+                {
+                    mess[i] = (byte)(mess[i-1] ^ SecretKey);
+                }
+            }
+        }
     }
     public class Message 
     {
@@ -127,13 +190,14 @@ namespace testTCP
     }
     public class Pakage
     {
-        private const byte end = 255;
+        public const byte end = 255;
         private const byte separate = 254;
         private const int idSize = 4;
         public const byte commMess = 200;
         public const byte commGetID  = 201;
-        public const byte commDisconnect = 202;
-
+        private const byte commDisconnect = 202;
+        public const byte commGetKey = 203;
+        public const byte commSendKey = 204;
         public static byte[] Make(Message msg)
         {
             byte[] body = Encoding.UTF8.GetBytes(msg.Body);
@@ -162,13 +226,57 @@ namespace testTCP
             }
             
             res[iterator] = end;
+            msg.Author.Decode(res);
             return res;
         }
-        public static void Parse(Message outMess, byte[] source)
+        public static byte[] MakeKey(UInt64 g, UInt64 p, UInt64 A)
+        {
+            int size = 8;
+            byte[] res = new byte[2+3*size];
+            res[0] = commGetKey;
+            res[1+3*size] = end;
+            var t = BitConverter.GetBytes(g);
+            for (int i = 0; i < size; i++)
+            {
+                res[1+i] = t[i];
+            }
+            t = BitConverter.GetBytes(p);
+            for (int i = 0; i < size; i++)
+            {
+                res[1+size+i] = t[i];
+            }
+            t = BitConverter.GetBytes(A);
+            for (int i = 0; i < size; i++)
+            {
+                res[1+size + size+i] = t[i];
+            }
+            Console.WriteLine("G: " + g);
+            Console.WriteLine("P: " + p);
+            Console.WriteLine("A: " + A);
+            return res;
+        }
+        public static void Parse(Client client, byte[] source)
+        {
+            UInt64 res = 0;
+            UInt64 tmp = BitConverter.ToUInt64(source,1);
+            Console.WriteLine("B: " + tmp);
+            res = UInt64.Parse( BigInteger.ModPow(tmp,client.firstKey,client.P).ToString());
+            
+            client.SetKey(res);
+            Console.WriteLine("secret key: " + res);
+        }
+        public static void Parse(Client client,Message outMess, byte[] source, bool mess = true  )
         {
             int iterator = idSize + 1 , i = iterator;
+            // if(source[6] == end) return; // 0: comm,  1-9:  id, 10: end
+            client.Decode(source);
+                Console.Write("[ ");                    
+                for (int jad = 0; jad < 60; jad++)
+                {
+                    Console.Write(source[jad] + " ");
+                }
+                Console.Write("]\n");
             outMess.Author.Id = BitConverter.ToUInt32(source,1);
-            if(source[5] == end) return; // 0: conmm,  1-4:  id, 5: end
             while (source[iterator] != separate)
             {
                 iterator ++;
@@ -181,16 +289,6 @@ namespace testTCP
                 iterator ++;
             }
             outMess.Body = Encoding.UTF8.GetString(source,i,(iterator-i));
-        }
-        private static void Reverse(byte[] src)
-        {            
-            byte tmp ;
-            for (int i = 0; i < src.Length/2; i++)
-            {
-                tmp = src[src.Length - 1 - i];
-                src[src.Length - 1 - i] = src[i];
-                src[i] = tmp;
-            }
         }
         public static byte[] GetID(Client client)
         {
@@ -207,6 +305,16 @@ namespace testTCP
         public static byte[] Disconnect()
         {
             return new byte[2]{commDisconnect,end};
+        }
+        public static UInt64 Pow(UInt64 x, UInt64 y)
+        {
+            UInt64 res = x;
+            for (UInt64 i = 0; i < y -1; i++)
+            {
+                res *= x;
+            }
+            return res;
+
         }
     }
 }
