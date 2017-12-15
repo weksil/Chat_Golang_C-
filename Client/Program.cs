@@ -103,12 +103,7 @@ namespace testTCP
                 switch (data[0])
                 {
                     case Pakage.commMess:
-                        Console.Write("[ ");                    
-                        for (int i = 0; i < 60; i++)
-                        {
-                            Console.Write(data[i] + " ");
-                        }
-                        Console.Write("]\n");                    
+                    
                         Pakage.Parse(msgClient,msg,data);
                         Console.WriteLine(msg.ToString() + "\n");
                         Console.WriteLine("------------------");
@@ -269,13 +264,6 @@ namespace testTCP
         {
             int iterator = idSize + 1 , i = iterator;
             // if(source[6] == end) return; // 0: comm,  1-9:  id, 10: end
-            client.Decode(source);
-                Console.Write("[ ");                    
-                for (int jad = 0; jad < 60; jad++)
-                {
-                    Console.Write(source[jad] + " ");
-                }
-                Console.Write("]\n");
             outMess.Author.Id = BitConverter.ToUInt32(source,1);
             while (source[iterator] != separate)
             {
